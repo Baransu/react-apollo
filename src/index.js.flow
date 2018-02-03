@@ -1,10 +1,8 @@
-// @flow
-import type {
-  ApolloClient,
-  MutationQueryReducersMap,
+import type ApolloClient, {
   ApolloQueryResult,
   ApolloError,
   FetchPolicy,
+  ErrorPolicy,
   FetchMoreOptions,
   UpdateQueryOptions,
   FetchMoreQueryOptions,
@@ -12,67 +10,44 @@ import type {
   PureQueryOptions,
   MutationUpdaterFn,
 } from 'apollo-client';
-import type { DocumentNode, VariableDefinitionNode } from 'graphql';
 
 export type NetworkStatus = 1 | 2 | 3 | 4 | 6 | 7 | 8;
 
-export interface ProviderProps {
-  client: ApolloClient;
-}
+export type OperationVariables = {
+  [key: string]: any,
+};
 
-declare export class ApolloProvider extends React$Component<ProviderProps> {
-  childContextTypes: {
-    client: ApolloClient,
-  };
-  contextTypes: {
-    client: ApolloClient,
-  };
-  getChildContext(): {
-    client: ApolloClient,
-  };
-  render(): React$Element<*>;
-}
-
-export type MutationFunc<TResult> = (
-  opts: MutationOpts,
-) => Promise<ApolloQueryResult<TResult>>;
-
-export type ChildProps<P, R> = {
-  data: GraphqlQueryControls & R,
-  mutate: MutationFunc<R>,
-} & P;
-
-// back compat
-export type DefaultChildProps<P, R> = ChildProps<P, R>;
-
-export type ErrorPolicy = 'none' | 'ignore' | 'all';
-
-export interface MutationOpts {
-  variables?: Object;
-  optimisticResponse?: Object;
+export interface MutationOpts<
+  TData = any,
+  TGraphQLVariables = OperationVariables,
+> {
+  variables?: TGraphQLVariables;
+  optimisticResponse?: TData;
   refetchQueries?: string[] | PureQueryOptions[];
-  update?: MutationUpdaterFn<*>;
-  errorPolicy?: ErrorPolicy;
+  update?: MutationUpdaterFn;
+  client?: ApolloClient<any>;
+  notifyOnNetworkStatusChange?: boolean;
 }
 
-export interface QueryOpts {
+export interface QueryOpts<TGraphQLVariables = OperationVariables> {
   ssr?: boolean;
-  variables?: Object;
+  variables?: TGraphQLVariables;
   fetchPolicy?: FetchPolicy;
-  pollInterval?: number;
-  skip?: boolean;
   errorPolicy?: ErrorPolicy;
+  pollInterval?: number;
+  client?: ApolloClient<any>;
+  notifyOnNetworkStatusChange?: boolean;
 }
 
-export interface GraphqlQueryControls {
+export interface GraphqlQueryControls<TGraphQLVariables = OperationVariables> {
   error?: ApolloError;
   networkStatus: NetworkStatus;
   loading: boolean;
-  variables: Object;
+  variables: TGraphQLVariables;
   fetchMore: (
     fetchMoreOptions: FetchMoreQueryOptions & FetchMoreOptions,
   ) => Promise<ApolloQueryResult<any>>;
-  refetch: (variables?: Object) => Promise<ApolloQueryResult<any>>;
+  refetch: (variables?: TGraphQLVariables) => Promise<ApolloQueryResult<any>>;
   startPolling: (pollInterval: number) => void;
   stopPolling: () => void;
   subscribeToMore: (options: SubscribeToMoreOptions) => () => void;
@@ -81,97 +56,86 @@ export interface GraphqlQueryControls {
   ) => void;
 }
 
-export interface OptionProps<TProps, TResult> {
-  ownProps: TProps;
-  data: GraphqlQueryControls & TResult;
-  mutate: MutationFunc<TResult>;
+export type MutationFunc<
+  TData = any,
+  TGraphQLVariables = OperationVariables,
+> = (
+  opts?: MutationOpts<TData, TGraphQLVariables>,
+) => Promise<ApolloQueryResult<TData>>;
+
+export type DataValue<
+  TData,
+  TGraphQLVariables = OperationVariables,
+> = GraphqlQueryControls<TGraphQLVariables> &
+  // data may not yet be loaded
+  Partial<TData>;
+
+// export to allow usage individually for simple components
+export interface DataProps<TData, TGraphQLVariables = OperationVariables> {
+  data: DataValue<TData, TGraphQLVariables>;
 }
 
-export type OptionDescription<P> =
-  | QueryOpts
-  | MutationOpts
-  | ((props: P) => QueryOpts | MutationOpts);
+// export to allow usage individually for simple components
+export interface MutateProps<
+  TData = any,
+  TGraphQLVariables = OperationVariables,
+> {
+  mutate: MutationFunc<TData, TGraphQLVariables>;
+}
 
-export type NamedProps<P, R> = P & {
+export type ChildProps<
+  TProps = {},
+  TData = {},
+  TGraphQLVariables = OperationVariables,
+> = TProps &
+  Partial<DataProps<TData, TGraphQLVariables>> &
+  Partial<MutateProps<TData, TGraphQLVariables>>;
+
+export type ChildDataProps<
+  TProps = {},
+  TData = {},
+  TGraphQLVariables = OperationVariables,
+> = TProps & DataProps<TData, TGraphQLVariables>;
+
+export type ChildMutateProps<
+  TProps = {},
+  TData = {},
+  TGraphQLVariables = OperationVariables,
+> = TProps & MutateProps<TData, TGraphQLVariables>;
+
+export type NamedProps<TProps, R> = TProps & {
   ownProps: R,
 };
 
-export interface OperationOption<TProps: {}, TResult: {}> {
-  +options?: OptionDescription<TProps>;
-  props?: (props: OptionProps<TProps, TResult>) => any;
-  +skip?: boolean | ((props: any) => boolean);
+export interface OptionProps<
+  TProps = any,
+  TData = any,
+  TGraphQLVariables = OperationVariables,
+>
+  extends Partial<DataProps<TData, TGraphQLVariables>>, Partial<
+    MutateProps<TData, TGraphQLVariables>,
+  > {
+  ownProps: TProps;
+}
+
+export interface OperationOption<
+  TProps,
+  TData,
+  TGraphQLVariables = OperationVariables,
+  TChildProps = ChildProps<TProps, TData, TGraphQLVariables>,
+> {
+  options?:
+    | QueryOpts<TGraphQLVariables>
+    | MutationOpts<TData, TGraphQLVariables>
+    | ((
+        props: TProps,
+      ) =>
+        | QueryOpts<TGraphQLVariables>
+        | MutationOpts<TData, TGraphQLVariables>);
+  props?: (props: OptionProps<TProps, TData>) => TChildProps;
+  skip?: boolean | ((props: any) => boolean);
   name?: string;
   withRef?: boolean;
   shouldResubscribe?: (props: TProps, nextProps: TProps) => boolean;
   alias?: string;
 }
-
-export interface OperationComponent<
-  TResult: Object = {},
-  TOwnProps: Object = {},
-  TMergedProps: Object = ChildProps<TOwnProps, TResult>,
-> {
-  (
-    component: React$ComponentType<TMergedProps>,
-  ): React$ComponentType<TOwnProps>;
-}
-
-declare export function graphql<TProps, TResult, TVariables, TChildProps>(
-  document: DocumentNode,
-  operationOptions?: OperationOption<TProps, TResult>,
-): OperationComponent<TResult, TProps, TChildProps>;
-
-declare type WithApolloOptions = {
-  withRef?: boolean,
-};
-
-declare export function withApollo<TProps>(
-  component: React$ComponentType<{ client: ApolloClient } & TProps>,
-  operationOptions?: WithApolloOptions,
-): React$ComponentType<TProps>;
-
-export interface IDocumentDefinition {
-  type: DocumentType;
-  name: string;
-  variables: VariableDefinitionNode[];
-}
-
-declare export function parser(document: DocumentNode): IDocumentDefinition;
-
-export interface Context {
-  client?: ApolloClient;
-  [key: string]: any;
-}
-
-export interface QueryTreeArgument {
-  rootElement: React$Element<*>;
-  rootContext?: Context;
-}
-
-export interface QueryResult {
-  query: Promise<ApolloQueryResult<mixed>>;
-  element: React$Element<*>;
-  context: Context;
-}
-
-declare export function walkTree(
-  element: React$Element<*>,
-  context: Context,
-  visitor: (
-    element: React$Element<*>,
-    instance: any,
-    context: Context,
-  ) => boolean | void,
-): void;
-
-declare export function getDataFromTree(
-  rootElement: React$Element<*>,
-  rootContext?: any,
-  fetchRoot?: boolean,
-): Promise<void>;
-
-declare export function renderToStringWithData(
-  component: React$Element<*>,
-): Promise<string>;
-
-declare export function cleanupApolloState(apolloState: any): void;
